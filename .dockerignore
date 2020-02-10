@@ -1,0 +1,8 @@
+node_modules/
+dist/
+downloads/
+corpus/
+.gitignore
+.env
+
+Dockerfile

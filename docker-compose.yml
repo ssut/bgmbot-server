@@ -1,0 +1,10 @@
+version: '3.4'
+
+x-restart-policy: &restart_policy
+  restart: unless-stopped
+x-bgmbot-defaults: &bgmbot_defaults
+  << : *restart_policy
+  build:
+    context: ./
+
+
