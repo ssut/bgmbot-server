@@ -372,40 +372,25 @@ export class PlaylistItem {
     const isItemCreated = Number(item.createdAt) === Number(item.updatedAt);
 
     const playlistItem = await getConnection().transaction(async (entityManager) => {
-      const updateResult = await entityManager.createQueryBuilder()
-        .useTransaction(true)
-        .update(PlaylistItem, {})
-        .where(`
-            "id" = (
-              SELECT "id"
-              FROM "playlist_item"
-              WHERE "channel" = :channel
-                AND "nextPlaylistItemId" is NULL
-              ORDER BY "id" DESC
-              LIMIT 1
-              FOR UPDATE SKIP LOCKED
-            )
-          `, { channel: channelKey })
-        .returning('*')
-        .execute();
-
-      let lastPlaylistItemId: number | null = null;
-      if (updateResult && (updateResult.affected || 0) > 0 && updateResult.raw.length > 0) {
-        lastPlaylistItemId = updateResult.raw[0].id;
-      }
-
       const playlistItem = Repository.PlaylistItem.create({
         channel: channelKey,
         itemId: item.id,
         userId,
-        isFirstItem: lastPlaylistItemId === null ? true : false,
+        isFirstItem: false,
       });
-      const result = await entityManager.insert(PlaylistItem, playlistItem);
+      await entityManager.insert(PlaylistItem, playlistItem);
 
-      if (lastPlaylistItemId) {
+      const lastPlaylistItem = await entityManager
+        .getOneInTransaction(PlaylistItem, 'id', (qb) => qb.where('channel = :channel AND "nextPlaylistItemId" is NULL', { channel: channelKey }).orderBy('id', 'DESC'), ['id']);
+      const lastPlaylistItemId = lastPlaylistItem?.id;
+
+      if (lastPlaylistItem) {
         await entityManager.update(PlaylistItem, { id: lastPlaylistItemId }, {
           nextPlaylistItemId: playlistItem.id,
         });
+      } else {
+        playlistItem.isFirstItem = true;
+        await entityManager.save(playlistItem);
       }
 
       return playlistItem;
