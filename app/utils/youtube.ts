@@ -120,4 +120,79 @@ export class YouTube {
       score: suggestion?.[2]?.[0] ?? 0,
     })).filter(({ suggestion }) => suggestion !== '');
   }
+
+  public async getMusicTrendingLink() {
+    await this.ensureSession();
+
+    const resp = await this.client.get('https://m.youtube.com/feed/trending');
+    const $ = cheerio.load(resp.data);
+
+    const initialData = JSON.parse($('#initial-data').html()!.replace(/^([\<\!\- ]+)(\{)/, '$2').replace(/(\})[\>\!\- ]+$/, '$1'));
+
+    let targetMenuLink: string | null = null;
+    try {
+      const menus = initialData.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.subMenu.channelListSubMenuRenderer.contents as any[];
+
+      const targetMenu = menus.find(({ channelListSubMenuAvatarRenderer: menu }) => {
+        const json = JSON.stringify(menu);
+        return json.includes('"음악"') || json.includes('"Music"');
+      });
+      console.info(targetMenu);
+      targetMenuLink = targetMenu.channelListSubMenuAvatarRenderer.navigationEndpoint.commandMetadata.webCommandMetadata.url;
+    } catch { }
+
+    return targetMenuLink;
+  }
+
+  public async getMusicTrending() {
+    const musicTrendingLink = await this.getMusicTrendingLink();
+    if (!musicTrendingLink) {
+      return [];
+    }
+
+    const resp = await this.client.get('https://m.youtube.com' + musicTrendingLink);
+    const $ = cheerio.load(resp.data);
+
+    const initialData = JSON.parse($('#initial-data').html()!.replace(/^([\<\!\- ]+)(\{)/, '$2').replace(/(\})[\>\!\- ]+$/, '$1'));
+
+    let trendings = [] as {
+      durationSeconds: number;
+      videoId: string;
+      publisher: string;
+      title: string;
+    }[];
+    try {
+      const itemSections = initialData.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents as any[];
+
+      trendings = itemSections.map(({ itemSectionRenderer: { contents: [{ videoWithContextRenderer: item }] } }) => {
+        const { text: lengthText } = item.lengthText.runs[0];
+        const { videoId } = item.navigationEndpoint.watchEndpoint;
+        const { text: publisher } = item.shortBylineText.runs[0];
+        const { text: title } = item.headline.runs[0];
+
+            const lengthParts = lengthText.split(':');
+
+            let durationSeconds: number = 0;
+            // hh:mm:ss
+            if (lengthParts.length === 3) {
+              durationSeconds = Number(lengthParts[0]) * 3600 + Number(lengthParts[1]) * 60 + Number(lengthParts[2]);
+            } else if (lengthParts.length === 2) {
+              durationSeconds = Number(lengthParts[0]) * 60 + Number(lengthParts[1]);
+            } else if (lengthParts.length === 1) {
+              durationSeconds = Number(lengthParts[0]);
+            }
+
+        return {
+          durationSeconds,
+          videoId: videoId as string,
+          publisher: publisher as string,
+          title: title as string,
+        };
+      });
+
+    } catch (e) {
+    }
+
+    return trendings;
+  }
 }
