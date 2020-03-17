@@ -1,8 +1,7 @@
 import './setup';
 import './sentry';
 import { DownloadTaskQueue, WordcloudTaskQueue, IWordcloudTaskPayload, NormalizeTaskQueue } from './queue';
-import { initRepository, redis } from './common';
-import { createConnection } from 'typeorm';
+import { initRepository, redis, initConnection } from './common';
 
 import { download, wordcloud, normalize } from './tasks';
 import Config from './config';
@@ -10,7 +9,7 @@ import Config from './config';
 const CronJob = require('cron-cluster')(redis.redis).CronJob;
 
 async function main() {
-  await createConnection();
+  await initConnection();
   initRepository();
 
   DownloadTaskQueue.process(download);
