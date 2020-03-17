@@ -8,7 +8,7 @@ module.exports = {
   "type": "postgres",
   "host": url.host,
   "port": Number(url.port) || 5432,
-  "username": url.username,
+  "username": url.username || url.user,
   "password": url.password,
   "database": url.database,
   "schema": url.schema,
