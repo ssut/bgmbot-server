@@ -146,10 +146,13 @@ export class Item {
     return;
   }
 
-  public getRelatedVideosAsItem(count = 1, pickingAlgorithm: 'random' | 'serial' = 'serial') {
+  public getRelatedVideosAsItem(count = 1, pickingAlgorithm: 'random' | 'serial' = 'serial', excludingVideoIdCandidates: string[] = []) {
     const allRelatedVideos = this.relatedVideos
       .filter(({ id, length_seconds }) => id && !isNaN(Number(length_seconds)) && Number(length_seconds) < 500);
-    const relatedVideos = pickingAlgorithm === 'serial' ? allRelatedVideos.splice(0, count) : _.sampleSize(allRelatedVideos, count);
+    const candidates = allRelatedVideos
+      .filter(({ id }) => !excludingVideoIdCandidates.includes(id!));
+
+    const relatedVideos = pickingAlgorithm === 'serial' ? candidates.splice(0, count) : _.sampleSize(candidates, count);
 
     return relatedVideos
       .map(relatedVideo => {

@@ -305,7 +305,7 @@ class ConnectionHandler {
           break;
 
         case RequestType.AddRelatedVideos:
-          response = await this.addRelatedVideos(message.data.itemId, message.data.count);
+          response = await this.addRelatedVideos(message.data.itemId, message.data.count, message.data.excludingVideoIdCandidates ?? []);
           break;
 
         case RequestType.DeletePlaylistItem:
@@ -546,9 +546,9 @@ class ConnectionHandler {
     return true;
   }
 
-  public async addRelatedVideos(itemId: number, count = 1) {
+  public async addRelatedVideos(itemId: number, count = 1, excludingVideoIdCandidates: string[] = []) {
     const rootItem = await Repository.Item.findOneOrFail(itemId);
-    const relateds = rootItem.getRelatedVideosAsItem(count, 'serial');
+    const relateds = rootItem.getRelatedVideosAsItem(count, 'serial', excludingVideoIdCandidates);
     if (relateds.length === 0) {
       return [];
     }
