@@ -69,6 +69,6 @@
     "typeorm": "^0.2.22",
     "uuid": "^3.4.0",
     "youtube-search": "Spring3/youtube-search",
-    "ytdl-core-new": "^1.0.3"
+    "ytdl-core-new": "^1.1.1"
   }
 }
