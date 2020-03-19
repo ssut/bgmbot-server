@@ -548,6 +548,11 @@ class ConnectionHandler {
 
   public async addRelatedVideos(itemId: number, count = 1, excludingVideoIdCandidates: string[] = []) {
     const rootItem = await Repository.Item.findOneOrFail(itemId);
+    if ((rootItem.info?.related_videos?.length ?? 0) === 0) {
+      await rootItem.updateInfo();
+      await Repository.Item.save(rootItem);
+    }
+
     const relateds = rootItem.getRelatedVideosAsItem(count, 'serial', excludingVideoIdCandidates);
     if (relateds.length === 0) {
       return [];

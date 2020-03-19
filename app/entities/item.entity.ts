@@ -14,6 +14,7 @@ import { generateQueryRegexCondition } from '../utils/hangul';
 import { PrimaryUUIDColumn } from '../utils/primary-uuid-column';
 import { PlaylistItem } from './playlist-item.entity';
 import Config from '../config';
+import { getInfo } from 'ytdl-core-new';
 
 export enum ItemState {
   JustAdded = 'JUST_ADDED',
@@ -144,6 +145,10 @@ export class Item {
     }
 
     return;
+  }
+
+  public async updateInfo() {
+    this.info = await getInfo(this.videoId);
   }
 
   public getRelatedVideosAsItem(count = 1, pickingAlgorithm: 'random' | 'serial' = 'serial', excludingVideoIdCandidates: string[] = []) {
