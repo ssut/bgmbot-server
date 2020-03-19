@@ -381,7 +381,7 @@ export class PlaylistItem {
       await entityManager.insert(PlaylistItem, playlistItem);
 
       const lastPlaylistItem = await entityManager
-        .getOneInTransaction(PlaylistItem, 'id', (qb) => qb.where('channel = :channel AND "nextPlaylistItemId" is NULL', { channel: channelKey }).orderBy('id', 'DESC'), ['id']);
+        .getOneInTransaction(PlaylistItem, 'id', (qb) => qb.where('id <> :id AND channel = :channel AND "nextPlaylistItemId" is NULL', { id: playlistItem.id, channel: channelKey }).orderBy('id', 'DESC'), ['id']);
       const lastPlaylistItemId = lastPlaylistItem?.id;
 
       if (lastPlaylistItem) {
