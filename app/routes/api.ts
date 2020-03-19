@@ -666,6 +666,11 @@ class ConnectionHandler {
 
   public async searchRelatedVideos(itemId: number) {
     const item = await Repository.Item.findOneOrFail(itemId);
+    if ((item.info?.related_videos?.length ?? 0) === 0) {
+      await item.updateInfo();
+      await Repository.Item.save(item);
+    }
+
     const relateds = item.getRelatedVideosAsItem(8);
 
     return relateds;
