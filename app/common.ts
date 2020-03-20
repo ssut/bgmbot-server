@@ -45,11 +45,13 @@ export const Repository: IRepository = {} as any;
 export const initConnection = async () => {
   const connection = await createConnection();
 
+  const schemaPrefix = typeof (connection.options as any).schema === 'string' ? `${(connection.options as any).schema}.` : '';
+
   await connection.query(`
   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  CREATE INDEX IF NOT EXISTS idx_slack_notification_ids ON bgmbot.playlist_item(("slackNotificationIds"->>'queued'));
-  CREATE INDEX IF NOT EXISTS idx_slack_notification_ids_now_playing ON bgmbot.playlist_item(("slackNotificationIds"->>'nowPlaying'));
-  CREATE INDEX IF NOT EXISTS idx_title ON bgmbot.item("title");
+  CREATE INDEX IF NOT EXISTS idx_slack_notification_ids ON ${schemaPrefix}playlist_item(("slackNotificationIds"->>'queued'));
+  CREATE INDEX IF NOT EXISTS idx_slack_notification_ids_now_playing ON ${schemaPrefix}playlist_item(("slackNotificationIds"->>'nowPlaying'));
+  CREATE INDEX IF NOT EXISTS idx_title ON ${schemaPrefix}item("title");
   `);
 };
 
