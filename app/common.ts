@@ -1,3 +1,4 @@
+import 'core-js';
 import { captureException, withScope } from '@sentry/node';
 import { User } from './entities/user.entity';
 import { PlaylistItem } from './entities/playlist-item.entity';
