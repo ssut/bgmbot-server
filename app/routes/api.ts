@@ -23,6 +23,7 @@ import { Job } from 'bee-queue';
 import { DownloadTaskQueue, IDownloadTaskPayload } from '../queue';
 import { search } from './../utils/search';
 import * as ytdl from 'ytdl-core-new';
+import { calculateSimilarity } from 'app/utils/text-similarity';
 
 const subscribeClient = redis.redis.duplicate();
 
@@ -551,6 +552,18 @@ class ConnectionHandler {
     if ((rootItem.info?.related_videos?.length ?? 0) === 0) {
       await rootItem.updateInfo();
       await Repository.Item.save(rootItem);
+    }
+
+    // similarity 가장 높은 항목은 제외
+    const [top] = rootItem.relatedVideos
+      .filter(({ video_id, title }) => typeof video_id === 'string' && typeof title === 'string' && title.length > 0)
+      .map((video) => ({
+          id: video.video_id,
+          score: calculateSimilarity(rootItem.title, video.title!),
+      }))
+      .sort((a, b) => b.score - a.score);
+    if (top && top.id) {
+      excludingVideoIdCandidates.push(top.id);
     }
 
     const relateds = rootItem.getRelatedVideosAsItem(count, 'serial', excludingVideoIdCandidates);
