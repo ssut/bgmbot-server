@@ -85,7 +85,7 @@ export class PlaylistItem {
           "playlist_item"."state",
           "playlist_item"."isDeleted",
           "playlist_item"."nextPlaylistItemId"
-        FROM bgmbot.playlist_item
+        FROM playlist_item
         WHERE "playlist_item"."channel" = $1 AND "playlist_item"."isDeleted" = false AND "playlist_item"."id" = $2
         UNION
         SELECT
@@ -94,7 +94,7 @@ export class PlaylistItem {
         "p"."state",
         "p"."isDeleted",
         "p"."nextPlaylistItemId"
-        FROM bgmbot.playlist_item p
+        FROM playlist_item p
         JOIN plist ON ("p"."nextPlaylistItemId" = "plist"."id")
         WHERE "p"."channel" = $1 AND "p"."state" != 'NOW_PLAYING'
       )
@@ -114,7 +114,7 @@ export class PlaylistItem {
           "playlist_item"."isDeleted",
           "playlist_item"."itemId",
           "playlist_item"."nextPlaylistItemId"
-        FROM bgmbot.playlist_item
+        FROM playlist_item
         WHERE "playlist_item"."channel" = $1 AND "playlist_item"."isDeleted" = false AND "playlist_item"."id" = $2
         UNION
         SELECT
@@ -124,11 +124,11 @@ export class PlaylistItem {
         "p"."isDeleted",
         "p"."itemId",
         "p"."nextPlaylistItemId"
-        FROM bgmbot.playlist_item p
+        FROM playlist_item p
         JOIN plist ON ("p"."nextPlaylistItemId" = "plist"."id")
         WHERE "p"."channel" = $1 AND "p"."state" != 'NOW_PLAYING'
       )
-      SELECT SUM(i.duration) as waiting FROM (SELECT * FROM "plist" WHERE "isDeleted" = false) "list" JOIN bgmbot.item i ON i.id = "itemId";
+      SELECT SUM(i.duration) as waiting FROM (SELECT * FROM "plist" WHERE "isDeleted" = false) "list" JOIN item i ON i.id = "itemId";
     `.trim(), [this.channel, this.id]);
 
     return Number(queryResult?.waiting ?? 0) || 0;
@@ -144,12 +144,12 @@ export class PlaylistItem {
       WITH RECURSIVE plist(id) AS (
         SELECT
           ${addAliasPrefix('playlist_item').join(',')}
-        FROM bgmbot.playlist_item
+        FROM playlist_item
         WHERE "playlist_item"."channel" = $1 ${options.skipDeleted ? 'AND "playlist_item"."isDeleted" = false' : ''} AND "playlist_item"."id" = $2
         UNION
         SELECT
           ${addAliasPrefix('p').join(',')}
-        FROM bgmbot.playlist_item p
+        FROM playlist_item p
         JOIN plist ON ${direction === 'next' ? `("p"."id" = "plist"."nextPlaylistItemId")` : `("p"."nextPlaylistItemId" = "plist"."id")`}
         WHERE "p"."channel" = $1
       )
