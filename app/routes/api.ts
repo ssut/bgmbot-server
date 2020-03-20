@@ -23,7 +23,7 @@ import { Job } from 'bee-queue';
 import { DownloadTaskQueue, IDownloadTaskPayload } from '../queue';
 import { search } from './../utils/search';
 import * as ytdl from 'ytdl-core-new';
-import { calculateSimilarity } from 'app/utils/text-similarity';
+import { calculateSimilarity } from '../utils/text-similarity';
 
 const subscribeClient = redis.redis.duplicate();
 
