@@ -29,6 +29,7 @@
     "@types/uuid": "^3.4.7",
     "ts-node": "^8.6.2",
     "ts-node-dev": "^1.0.0-pre.44",
+    "tsconfig-paths": "^3.9.0",
     "typescript": "^3.8.3"
   },
   "dependencies": {
@@ -65,6 +66,7 @@
     "qs": "^6.9.1",
     "reflect-metadata": "^0.1.13",
     "slack": "^11.0.2",
+    "source-map-support": "^0.5.16",
     "tough-cookie": "^3.0.1",
     "tunnel": "0.0.6",
     "typeorm": "^0.2.22",

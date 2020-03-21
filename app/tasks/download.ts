@@ -1,21 +1,24 @@
-import { NormalizeTaskQueue, INormalizeTaskPayload } from './../queue';
-import { getChannel } from './../utils';
-import { Repository, slack, redis } from './../common';
-import * as path from 'path';
-import * as fs from 'fs';
-import { IDownloadTaskPayload } from '../queue';
-import ffmpeg from 'fluent-ffmpeg';
+import { PlaylistItem } from '@entities/playlist-item.entity';
+import { captureException, withScope } from '@sentry/node';
+import axios from 'axios';
 import { Job } from 'bee-queue';
+import ffmpeg from 'fluent-ffmpeg';
+import * as fs from 'fs';
+import { DateTime } from 'luxon';
+import * as path from 'path';
+import * as io from 'stream';
+import { getRepository } from 'typeorm';
 import * as uuid from 'uuid';
 import * as ytdl from 'ytdl-core-new';
-import { ItemState } from '../entities/item.entity';
-import { toFilename } from '../utils';
-import Config from '../config';
-import * as io from 'stream';
-import axios from 'axios';
-import { captureException, withScope } from '@sentry/node';
-import { DateTime } from 'luxon';
 import { VideoInfo } from 'ytdl-core-new/dist/models';
+
+import Config from '../config';
+import { Item, ItemState } from '../entities/item.entity';
+import { IDownloadTaskPayload } from '../queue';
+import { toFilename } from '../utils';
+import { redis, slack } from './../common';
+import { INormalizeTaskPayload, NormalizeTaskQueue } from './../queue';
+import { getChannel } from './../utils';
 
 const now = () => DateTime.local().toFormat('yyyy-MM-dd HH:mm:ss');
 const downloadClient = axios.create({
@@ -28,12 +31,12 @@ export default async function (job: Job) {
   const payload = job.data as IDownloadTaskPayload;
   console.info(now(), payload);
 
-  const item = await Repository.Item.findOneOrFail(payload.itemId);
+  const item = await getRepository(Item).findOneOrFail(payload.itemId);
   item.state = ItemState.Downloading;
   item.downloadStartedAt = new Date();
-  await Repository.Item.save(item);
+  await getRepository(Item).save(item);
 
-  const playlistItem = await Repository.PlaylistItem.findOneOrFail(payload.playlistItemId);
+  const playlistItem = await getRepository(PlaylistItem).findOneOrFail(payload.playlistItemId);
   const channelInfo = getChannel(playlistItem.channel);
 
   try {
@@ -183,9 +186,9 @@ export default async function (job: Job) {
   item.downloadEndedAt = new Date();
   item.filename = filename;
   item.state = ItemState.Prepared;
-  await Repository.Item.save(item);
+  await getRepository(Item).save(item);
 
-  await Repository.PlaylistItem.update({ id: playlistItem.id }, { isReady: true });
+  await getRepository(PlaylistItem).update({ id: playlistItem.id }, { isReady: true });
 
   await redis.publish(`bgm:channels:${playlistItem.channel}:events`, JSON.stringify({
     channel: playlistItem.channel,

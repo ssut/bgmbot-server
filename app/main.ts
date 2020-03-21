@@ -1,3 +1,4 @@
+import { UserRepository } from './repositories/user.repository';
 import { DateTime } from 'luxon';
 import './setup';
 import { EventEmitter } from 'events';
@@ -12,18 +13,21 @@ import { createReadStream, stat } from 'fs';
 import * as fse from 'fs-extra';
 import * as _ from 'lodash';
 import * as path from 'path';
-import { In } from 'typeorm';
+import { In, getRepository, getCustomRepository } from 'typeorm';
 import * as util from 'util';
 import { authenticator } from 'otplib';
 import uuid from 'uuid';
 
-import { client, initConnection, initRepository, redis, Repository, slack } from './common';
+import { client, initConnection, redis, slack } from './common';
 import Config from './config';
 import { PlaylistItem, PlaylistItemState } from './entities/playlist-item.entity';
 import { User } from './entities/user.entity';
 import * as routes from './routes';
 import { getChannelByChannelId } from './utils';
 import { search } from './utils/search';
+import { Item } from '@entities/item.entity';
+import { PlaylistItemRepository } from '@repositories/playlist-item.repository';
+import { Like } from '@entities/like.entity';
 
 enum NotificationType {
   AddToPlaylist = 'addToPlaylist',
@@ -70,7 +74,7 @@ app.head('/items/:id', async (request, reply) => {
   }
 
   const id = request.params.id;
-  const item = await Repository.Item.findOneOrFail(id, {
+  const item = await getRepository(Item).findOneOrFail(id, {
     select: ['id', 'filename', 'state', 'hasNormalized'],
   });
 
@@ -142,7 +146,7 @@ app.get('/items/:id', async (request, reply) => {
   }
 
   const id = request.params.id;
-  const item = await Repository.Item.findOneOrFail(id, {
+  const item = await getRepository(Item).findOneOrFail(id, {
     select: ['id', 'filename', 'state', 'hasNormalized'],
   });
 
@@ -168,7 +172,7 @@ app.get('/items/:id', async (request, reply) => {
 
   if (item.hasNormalized && !(await fse.pathExists(normalizedFilepath))) {
     item.hasNormalized = false;
-    await Repository.Item.update({ id: item.id }, { hasNormalized: false });
+    await getRepository(Item).update({ id: item.id }, { hasNormalized: false });
     console.info('normalized file does not exist', normalizedFilepath);
   }
 
@@ -244,7 +248,7 @@ app.post('/slack/events', async (request, reply) => {
   }
 
   if (reaction === 'x') {
-    const playlistItem = await PlaylistItem.getPlaylistItemBySlackNotificationId('queued', ts);
+    const playlistItem = await getCustomRepository(PlaylistItemRepository).getPlaylistItemBySlackNotificationId('queued', ts);
     if (!playlistItem) {
       return {};
     }
@@ -261,14 +265,14 @@ app.post('/slack/events', async (request, reply) => {
       return {};
     }
 
-    const item = await Repository.Item.findOne(playlistItem.itemId);
+    const item = await getRepository(Item).findOne(playlistItem.itemId);
     if (!item) {
       // ?
       return {};
     }
 
     playlistItem.isDeleted = true;
-    await Repository.PlaylistItem.save(playlistItem);
+    await getRepository(PlaylistItem).save(playlistItem);
 
     slack.reactions.remove({
       token: Config.Slack.BotUserAccessToken,
@@ -298,26 +302,26 @@ app.post('/slack/events', async (request, reply) => {
       updatedBy: '',
     }));
   } else if (reaction?.startsWith('heart')) {
-    let playlistItem = await PlaylistItem.getPlaylistItemBySlackNotificationId('queued', ts);
+    let playlistItem = await getCustomRepository(PlaylistItemRepository).getPlaylistItemBySlackNotificationId('queued', ts);
     if (!playlistItem) {
-      playlistItem = await PlaylistItem.getPlaylistItemBySlackNotificationId('nowPlaying', ts);
+      playlistItem = await getCustomRepository(PlaylistItemRepository).getPlaylistItemBySlackNotificationId('nowPlaying', ts);
     }
 
     if (!playlistItem) {
       return {};
     }
 
-    if ((await Repository.Like.count({ userId, playlistItemId: playlistItem.id })) > 0) {
+    if ((await getRepository(Like).count({ userId, playlistItemId: playlistItem.id })) > 0) {
       return {};
     }
 
-    const item = await Repository.Item.findOneOrFail({ id: playlistItem.itemId });
-    const like = Repository.Like.create({
+    const item = await getRepository(Item).findOneOrFail({ id: playlistItem.itemId });
+    const like = getRepository(Like).create({
       userId,
       playlistItemId: playlistItem.id,
       itemId: playlistItem.itemId,
     });
-    await Repository.Like.save(like);
+    await getRepository(Like).save(like);
 
     withScope(scope => {
       scope.setFingerprint(['LIKE']);
@@ -354,7 +358,7 @@ app.post('/slack/interactives', async (request, reply) => {
     },
   } = body;
 
-  const user = await User.getOrCreate(userId, {
+  const user = await getCustomRepository(UserRepository).getOrCreate(userId, {
     username,
     name,
   });
@@ -458,7 +462,7 @@ app.post('/slack/interactives', async (request, reply) => {
       const { videoId, link } = JSON.parse(value);
 
       try {
-        await PlaylistItem.addPlaylistItemFromLink(link, channel.key, userId);
+        await getCustomRepository(PlaylistItemRepository).addPlaylistItemFromLink(link, channel.key, userId);
 
         // 선택 메시지 지우기
         client.post(response_url, {
@@ -482,7 +486,7 @@ app.post('/slack/interactives', async (request, reply) => {
 
     case NotificationType.AgreeTOS: {
       const today = DateTime.local();
-      await Repository.User.update({ id: user.id }, { TOSAgreedAt: today.toJSDate() });
+      await getRepository(User).update({ id: user.id }, { TOSAgreedAt: today.toJSDate() });
 
       // 선택 메시지 지우기
       client.post(response_url, {
@@ -509,8 +513,8 @@ app.post('/slack/slash-commands/playlist', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const playlist = await PlaylistItem.getPlaylist(channel.key, { previousCount: 0, nextCount: 25 });
-  const items = await Repository.Item.find({
+  const playlist = await getCustomRepository(PlaylistItemRepository).getPlaylist(channel.key, { previousCount: 0, nextCount: 25 });
+  const items = await getRepository(Item).find({
     select: ['id', 'duration', 'link', 'title', 'info'],
     where: {
       id: In([
@@ -550,7 +554,7 @@ app.post('/slack/slash-commands/maindj', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const user = await Repository.User.findOne(user_id);
+  const user = await getRepository(User).findOne(user_id);
   if (!user) {
     return '허용되지 않은 사용자인 것 같아요.';
   }
@@ -581,7 +585,7 @@ app.post('/slack/slash-commands/otp', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const user = await Repository.User.findOne(user_id);
+  const user = await getRepository(User).findOne(user_id);
   if (!user) {
     return '허용되지 않은 사용자인 것 같아요.';
   }
@@ -618,7 +622,7 @@ app.post('/slack/slash-commands/permit', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const user = await Repository.User.findOne(user_id);
+  const user = await getRepository(User).findOne(user_id);
   if (!user) {
     return '허용되지 않은 사용자인 것 같아요.';
   }
@@ -651,14 +655,14 @@ app.post('/slack/slash-commands/permit', async (request, reply) => {
       continue;
     }
 
-    const user = await User.getOrCreate(slackUser.id, {
+    const user = await getCustomRepository(UserRepository).getOrCreate(slackUser.id, {
       name: slackUser.real_name,
       username: slackUser.name,
     });
 
     if (!user.allowedChannels.includes(channel.key)) {
       user.allowedChannels.push(channel.key);
-      await Repository.User.save(user);
+      await getRepository(User).save(user);
 
       user.sendDM({
         text: `*[브금 채널 권한 부여]* <#${channel.info.name}> 채널에서 곡을 선곡할 수 있는 권한이 부여되었습니다! (부여자: <@${channel.info.superuser}>)`,
@@ -695,7 +699,7 @@ app.post('/slack/slash-commands/search', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const user = await Repository.User.findOne(user_id);
+  const user = await getRepository(User).findOne(user_id);
   if (!user || !user.allowedChannels.includes(channel.key)) {
     return '권한 부여가 필요합니다. 채널장에게 요청해주세요!';
   }
@@ -827,7 +831,7 @@ app.post('/slack/slash-commands/volume', async (request, reply) => {
     return '지원하지 않는 채널입니다.';
   }
 
-  const user = await Repository.User.findOne(user_id);
+  const user = await getRepository(User).findOne(user_id);
   if (!user || !user.allowedChannels.includes(channel.key)) {
     return '권한 부여가 필요합니다. 채널장에게 요청해주세요!';
   }
@@ -893,7 +897,6 @@ app.post('/slack/slash-commands/volume', async (request, reply) => {
 
 async function main() {
   await initConnection();
-  initRepository();
 
   await redis.ping();
 

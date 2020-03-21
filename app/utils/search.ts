@@ -4,9 +4,9 @@ import * as _ from 'lodash';
 import * as youtubeSearch from 'youtube-search';
 
 import Config from '../config';
-import { Repository } from './../common';
 import { Item, ItemState } from './../entities/item.entity';
 import { generateQueryRegexCondition } from './hangul';
+import { getRepository } from 'typeorm';
 
 type YouTubeSearchOptions = youtubeSearch.search.YouTubeSearchOptions;
 
@@ -93,7 +93,7 @@ export const search = async (keyword: string, options: ISearchOptions = {
         extras.resultsLength = results.length;
 
         for (const result of results) {
-          items.push(Repository.Item.create({
+          items.push(getRepository(Item).create({
             videoId: result.id,
             title: result.title,
             link: result.link,
@@ -110,7 +110,7 @@ export const search = async (keyword: string, options: ISearchOptions = {
         const titleConditions = keyword.split(/\s/g).map((k) => generateQueryRegexCondition(k));
         extras.titleConditions = titleConditions;
 
-        const query = Repository.Item.createQueryBuilder()
+        const query = getRepository(Item).createQueryBuilder()
           .select()
           .where('state = :state', { state: ItemState.Prepared })
           .andWhere('filename is NOT NULL')

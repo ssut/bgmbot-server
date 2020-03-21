@@ -1,15 +1,17 @@
 import 'core-js';
+import 'source-map-support/register';
+
+if (process.env.NODE_ENV !== 'production') {
+  require('tsconfig-paths/register');
+}
+
 import { captureException, withScope } from '@sentry/node';
-import { User } from './entities/user.entity';
-import { PlaylistItem } from './entities/playlist-item.entity';
-import { getRepository, Repository as TRepository, createConnection } from 'typeorm';
-import Slack from 'slack';
 import axios, { AxiosError } from 'axios';
 import { createHandyClient } from 'handy-redis';
-import Config from './config';
-import { Item } from './entities/item.entity';
-import { Like } from './entities/like.entity';
+import Slack from 'slack';
+import { createConnection } from 'typeorm';
 
+import Config from './config';
 export const slack: typeof Slack = new (Slack as any)({ token: Config.Slack.BotUserAccessToken });
 export const client = axios.create();
 export const redis = createHandyClient();
@@ -34,15 +36,6 @@ client.interceptors.response.use((resp) => resp, (error: AxiosError) => {
   return Promise.reject(error);
 });
 
-interface IRepository {
-  Item: TRepository<Item>;
-  PlaylistItem: TRepository<PlaylistItem>;
-  User: TRepository<User>;
-  Like: TRepository<Like>;
-}
-
-export const Repository: IRepository = {} as any;
-
 export const initConnection = async () => {
   const connection = await createConnection();
 
@@ -54,11 +47,4 @@ export const initConnection = async () => {
   CREATE INDEX IF NOT EXISTS idx_slack_notification_ids_now_playing ON ${schemaPrefix}playlist_item(("slackNotificationIds"->>'nowPlaying'));
   CREATE INDEX IF NOT EXISTS idx_title ON ${schemaPrefix}item("title");
   `);
-};
-
-export const initRepository = () => {
-  Repository.Item = getRepository(Item);
-  Repository.PlaylistItem = getRepository(PlaylistItem);
-  Repository.User = getRepository(User);
-  Repository.Like = getRepository(Like);
 };

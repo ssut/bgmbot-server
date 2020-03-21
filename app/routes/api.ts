@@ -1,10 +1,13 @@
+import { PlaylistItemRepository } from './../repositories/playlist-item.repository';
+import { ItemRepository } from './../repositories/item.repository';
+import { UserRepository } from './../repositories/user.repository';
 import { sha512 } from './../utils/hash';
 import { YouTube } from './../utils/youtube';
 import { captureException, withScope, Scope, captureEvent, Severity } from '@sentry/node';
 import { Item } from './../entities/item.entity';
 import { Duration } from 'luxon';
 import { PlaylistItemState } from './../entities/playlist-item.entity';
-import { In, getConnection, Raw } from 'typeorm';
+import { In, getConnection, Raw, getCustomRepository } from 'typeorm';
 import { createHandyClient } from 'handy-redis';
 import { serialize } from 'class-transformer';
 import 'fastify-websocket';
@@ -16,7 +19,7 @@ import jwt from 'jsonwebtoken';
 import Config from '../config';
 import { User } from '../entities/user.entity';
 import { getChannel } from '../utils';
-import { Repository, slack, redis } from './../common';
+import { slack, redis } from './../common';
 import { IReply, IRequest, RequestType, EventType, PlayerProgress } from './api.interface';
 import { PlaylistItem } from '../entities/playlist-item.entity';
 import { Job } from 'bee-queue';
@@ -61,6 +64,10 @@ class ConnectionHandler {
   private onRedisMessageCallback: any;
 
   private youtube: YouTube;
+
+  private readonly userRepository = getCustomRepository(UserRepository);
+  private readonly itemRepository = getCustomRepository(ItemRepository);
+  private readonly playlistItemRepository = getCustomRepository(PlaylistItemRepository);
 
   public constructor(
     private connection: websocketPlugin.SocketStream,
@@ -373,7 +380,7 @@ class ConnectionHandler {
   public async authenticate(token: string) {
     const { userId, channelKey } = (await jwt.verify(token, Config.Jwt.Secret)) as any;
 
-    const user = await Repository.User.findOneOrFail(userId);
+    const user = await this.userRepository.findOneOrFail(userId);
     const channel = getChannel(channelKey);
     if (!channel) {
       throw new Error(`${channel} channel does not exist.`);
@@ -411,7 +418,7 @@ class ConnectionHandler {
       return [];
     }
 
-    const playlistItems = await Repository.PlaylistItem.find({
+    const playlistItems = await this.playlistItemRepository.find({
       where: {
         id: In(ids),
       },
@@ -425,7 +432,7 @@ class ConnectionHandler {
   }
 
   public async getPlaylist() {
-    const playlist = await PlaylistItem.getPlaylist(this.channelKey, {
+    const playlist = await this.playlistItemRepository.getPlaylist(this.channelKey, {
       previousCount: 25,
       nextCount: 200,
     });
@@ -433,7 +440,7 @@ class ConnectionHandler {
       return playlist;
     }
 
-    const items = await Repository.Item.find({
+    const items = await this.itemRepository.find({
       where: {
         id: In([
           ...playlist.previousPlaylistItems.map(x => x?.itemId ?? undefined),
@@ -458,7 +465,7 @@ class ConnectionHandler {
   }
 
   public async deletePlaylistItem(playlistItemId: number) {
-    const playlistItem = await Repository.PlaylistItem.findOneOrFail(playlistItemId, {
+    const playlistItem = await this.playlistItemRepository.findOneOrFail(playlistItemId, {
       select: ['isDeleted'],
     });
 
@@ -466,7 +473,7 @@ class ConnectionHandler {
       throw new Error('이미 삭제된 곡입니다.');
     }
 
-    await Repository.PlaylistItem.update(playlistItemId, { isDeleted: true });
+    await this.playlistItemRepository.update(playlistItemId, { isDeleted: true });
     redis.publish(`bgm:channels:${this.channelKey}:events`, JSON.stringify({
       channel: this.channelKey,
       event: 'playlistUpdated',
@@ -479,7 +486,7 @@ class ConnectionHandler {
   public async movePlaylistItem(payload: any) {
     const { id, moveBefore } = payload;
 
-    const playlist = await Repository.PlaylistItem.findOneOrFail(id);
+    const playlist = await this.playlistItemRepository.findOneOrFail(id);
 
     try {
       return await playlist.moveBefore(moveBefore);
@@ -495,7 +502,7 @@ class ConnectionHandler {
   public async setIsPlaying(payload: any) {
     const { id } = payload;
 
-    const playlistItem = await Repository.PlaylistItem.findOneOrFail({
+    const playlistItem = await this.playlistItemRepository.findOneOrFail({
       select: ['id', 'itemId', 'channel', 'state', 'userId', 'addedAutomatically'],
       relations: ['item', 'user'],
       where: {
@@ -524,7 +531,7 @@ class ConnectionHandler {
           unfurl_links: false,
           unfurl_media: false,
         });
-        const qb = Repository.PlaylistItem.createQueryBuilder();
+        const qb = this.playlistItemRepository.createQueryBuilder();
         await qb
           .update()
           .set({
@@ -548,10 +555,10 @@ class ConnectionHandler {
   }
 
   public async addRelatedVideos(itemId: number, count = 1, excludingVideoIdCandidates: string[] = []) {
-    const rootItem = await Repository.Item.findOneOrFail(itemId);
+    const rootItem = await this.itemRepository.findOneOrFail(itemId);
     if ((rootItem.info?.related_videos?.length ?? 0) === 0) {
       await rootItem.updateInfo();
-      await Repository.Item.save(rootItem);
+      await this.itemRepository.save(rootItem);
     }
 
     // similarity 가장 높은 항목은 제외
@@ -581,7 +588,7 @@ class ConnectionHandler {
         .onConflict('("videoId") DO UPDATE SET "videoId" = EXCLUDED."videoId"')
         .returning('*')
         .execute()
-        .then(executeResult => Repository.Item.create(executeResult.generatedMaps[0]));
+        .then(executeResult => this.itemRepository.create(executeResult.generatedMaps[0]));
       const isItemCreated = Number(item.createdAt) === Number(item.updatedAt);
 
       const playlistItem = await getConnection().transaction(async (entityManager) => {
@@ -607,7 +614,7 @@ class ConnectionHandler {
           lastPlaylistItemId = updateResult.raw[0].id;
         }
 
-        const playlistItem = Repository.PlaylistItem.create({
+        const playlistItem = this.playlistItemRepository.create({
           channel: this.channelKey,
           itemId: item.id,
           userId: this.user.id,
@@ -640,7 +647,7 @@ class ConnectionHandler {
         });
       } else {
         playlistItem.isReady = true;
-        await Repository.PlaylistItem.save(playlistItem);
+        await this.playlistItemRepository.save(playlistItem);
       }
 
       const info = await ytdl.getInfo(link);
@@ -653,13 +660,13 @@ class ConnectionHandler {
         unfurl_media: false,
       });
 
-      await Repository.Item.update(item.id, {
+      await this.itemRepository.update(item.id, {
         info: { ...info } as any,
         title: info.title,
       });
 
       playlistItem.slackNotificationIds.queued = resp.ts;
-      await Repository.PlaylistItem.save(playlistItem);
+      await this.playlistItemRepository.save(playlistItem);
       if (downloadTaskJob) {
         await downloadTaskJob.save();
       } else {
@@ -678,10 +685,10 @@ class ConnectionHandler {
   }
 
   public async searchRelatedVideos(itemId: number) {
-    const item = await Repository.Item.findOneOrFail(itemId);
+    const item = await this.itemRepository.findOneOrFail(itemId);
     if ((item.info?.related_videos?.length ?? 0) === 0) {
       await item.updateInfo();
-      await Repository.Item.save(item);
+      await this.itemRepository.save(item);
     }
 
     const relateds = item.getRelatedVideosAsItem(8);
@@ -690,7 +697,7 @@ class ConnectionHandler {
   }
 
   public async addPlaylistItemFromLink(link: string) {
-    return PlaylistItem.addPlaylistItemFromLink(link, this.channelKey, this.user.id);
+    return this.playlistItemRepository.addPlaylistItemFromLink(link, this.channelKey, this.user.id);
   }
 
   public async broadcastProgress(progress: PlayerProgress) {

@@ -1,13 +1,19 @@
-import { Duration } from 'luxon';
-import * as ytdl from 'ytdl-core-new';
-import { getChannel } from './../utils';
-import { Repository, slack, redis } from './../common';
-import { PrimaryGeneratedColumn, ManyToOne, Column, Index, Entity, CreateDateColumn, UpdateDateColumn, LessThan, Not, OneToOne, Unique, getConnection, getMetadataArgsStorage, getRepository, getConnectionManager, In, Raw, IsNull } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  getConnection,
+  In,
+  Index,
+  ManyToOne,
+  OneToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+  getRepository,
+} from 'typeorm';
+
 import { Item } from './item.entity';
 import { User } from './user.entity';
-import Config from '../config';
-import { Job } from 'bee-queue';
-import { DownloadTaskQueue, IDownloadTaskPayload } from '../queue';
 
 export enum PlaylistItemState {
   NotPlayedYet = 'NOT_PLAYED_YET',
@@ -135,7 +141,7 @@ export class PlaylistItem {
   }
 
   public async getAdjacentPlaylistItems(direction: 'previous' | 'next', options: Partial<{ limit: number; skipDeleted: boolean }> = { limit: 100, skipDeleted: false }) {
-    const columnNames = Repository.PlaylistItem.metadata.columns.filter(
+    const columnNames = getRepository(PlaylistItem).metadata.columns.filter(
       (column) => !['slackNotificationIds'].includes(column.databaseName),
     ).map((column) => `"${column.databaseName}"`);
     const addAliasPrefix = (alias: string) => columnNames.map((columnName) => `"${alias}".${columnName}`);
@@ -156,7 +162,7 @@ export class PlaylistItem {
       SELECT * FROM "plist" WHERE "id" <> $2 ${options.skipDeleted ? 'AND "isDeleted" = false' : ''} LIMIT $3;
     `.trim(), [this.channel, this.id, options.limit]);
 
-    const playlistItems = (items?.map((item: any) => Repository.PlaylistItem.create(item)) ?? []) as PlaylistItem[];
+    const playlistItems = (items?.map((item: any) => getRepository(PlaylistItem).create(item)) ?? []) as PlaylistItem[];
     if (direction === 'previous') {
       return playlistItems.reverse();
     }
@@ -165,11 +171,10 @@ export class PlaylistItem {
 
   public async moveBefore(nextPlaylistItemId: number | null) {
     if (this.nextPlaylistItemId === nextPlaylistItemId) {
-      console.info(this.nextPlaylistItemId, nextPlaylistItemId);
       return false;
     }
 
-    const targetItem = nextPlaylistItemId === null ? null : (await Repository.PlaylistItem.findOneOrFail(nextPlaylistItemId));
+    const targetItem = nextPlaylistItemId === null ? null : (await getRepository(PlaylistItem).findOneOrFail(nextPlaylistItemId));
 
     let [
       [previousOfTarget],
@@ -182,12 +187,6 @@ export class PlaylistItem {
       this.getAdjacentPlaylistItems('previous', { limit: 1 }),
       this.getAdjacentPlaylistItems('next', { limit: 1 }),
     ]);
-
-    console.info('previousOfTarget', previousOfTarget?.id);
-    console.info('target', targetItem?.id);
-    console.info('previousOfThis', previousOfThis?.id);
-    console.info('this', this.id);
-    console.info('nextOfThis', nextOfThis?.id);
 
     return getConnection().transaction(async (entityManager) => {
       const resetTargets = [this.id];
@@ -223,7 +222,6 @@ export class PlaylistItem {
       // 끝으로 보낼 때
       if (targetItem === null) {
         if (lastPlaylistItem) {
-          console.info('last', lastPlaylistItem.id);
           if (lastPlaylistItem.id) {
             const previousPlaylistItem = await entityManager
               .getOneInTransaction(PlaylistItem, 'id', (qb) =>
@@ -235,7 +233,6 @@ export class PlaylistItem {
             );
             if (previousPlaylistItem) {
               const previousItemId = lastPlaylistItem.id;
-              console.info('previous', previousItemId);
 
               await entityManager.update(PlaylistItem, { id: previousItemId }, { nextPlaylistItemId: this.id });
             }
@@ -249,203 +246,5 @@ export class PlaylistItem {
 
       return true;
     });
-  }
-
-  public static async getPlaylistItemBySlackNotificationId(key: keyof IPlaylistItemSlackNotificationIds, notificationId: string) {
-    return Repository.PlaylistItem.createQueryBuilder()
-      .select()
-      .where('"slackNotificationIds"->>:key = :notificationId', { key, notificationId })
-      .getOne();
-  }
-
-  public static async checkIfFresh(channel: string) {
-    const [result] = await Repository.PlaylistItem.createQueryBuilder()
-      .select(`COUNT(CASE WHEN (b.state != 'NOT_PLAYED_YET') THEN 1 ELSE null END) as "count"`)
-      .from((subQuery) =>
-        subQuery
-          .select('COUNT(distinct p.state), p.state')
-          .from(PlaylistItem, 'p')
-          .groupBy('p.state')
-          .addGroupBy('p.channel')
-          .having('p.channel = :channel', { channel })
-        , 'b')
-      .execute();
-
-    return Number(result?.count) === 0;
-  }
-
-  public static async getPlaylist(channel: string, options: Partial<{ previousCount: number; nextCount: number }> = { previousCount: 20, nextCount: 20 }) {
-    const isFresh = await this.checkIfFresh(channel);
-    if (isFresh) {
-      // nextPlaylistId가 없는 것이 첫번째 곡
-      const firstPlaylistItem = await Repository.PlaylistItem.findOne({
-        where: {
-          channel,
-          isFirstItem: true,
-        },
-      });
-      if (!firstPlaylistItem) {
-        return {
-            previousPlaylistItems: [],
-            nextPlaylistItems: [],
-            nowPlaying: null,
-        };
-      }
-
-      return {
-        previousPlaylistItems: [],
-        nextPlaylistItems: [
-          ...(
-            firstPlaylistItem?.state === PlaylistItemState.NotPlayedYet
-              ? [firstPlaylistItem]
-              : []
-          ),
-          ...await firstPlaylistItem.getAdjacentPlaylistItems('next', { limit: options.nextCount }),
-        ],
-        nowPlaying: firstPlaylistItem.state === PlaylistItemState.NowPlaying ? firstPlaylistItem : null,
-      };
-    }
-
-    let target: PlaylistItem | null = null;
-    const nowPlaying = await Repository.PlaylistItem.findOne({ channel, state: PlaylistItemState.NowPlaying });
-    if (nowPlaying) {
-      target = nowPlaying;
-    } else {
-      const candidate = await Repository.PlaylistItem.findOne({ channel, state: Not(PlaylistItemState.NowPlaying) });
-      if (!candidate) {
-        return {
-          previousPlaylistItems: [],
-          nextPlaylistItems: [],
-          nowPlaying: null,
-        };
-      }
-
-      target = candidate;
-    }
-
-    return {
-      previousPlaylistItems: [
-        ...await target.getAdjacentPlaylistItems('previous', { limit: options.previousCount }),
-      ],
-      nextPlaylistItems: [
-        ...(
-          target.state === PlaylistItemState.NotPlayedYet
-            ? [target]
-            : []
-        ),
-        ...await target.getAdjacentPlaylistItems('next', { limit: options.nextCount }),
-      ],
-      nowPlaying: nowPlaying || null,
-    };
-  }
-
-  public static async addPlaylistItemFromLink(link: string, channelKey: string, userId?: string) {
-    const channel = getChannel(channelKey);
-
-    const info = await ytdl.getInfo(link);
-    if (!link) {
-      throw new Error('올바르지 않은 링크입니다.');
-    }
-    const { length_seconds } = info;
-    const seconds = Number(length_seconds);
-    if (!seconds) {
-      throw new Error('재생 길이 정보가 올바르지 않습니다.');
-    }
-
-    const baseItem = Repository.Item.create({
-      videoId: info.video_id,
-      link,
-      info: { ...info } as any,
-      title: info.title,
-      duration: seconds,
-      thumbnailUrl: info.thumbnail_url || `https://img.youtube.com/vi/${info.video_id}/default.jpg`,
-    });
-
-    const item = await getConnection().createQueryBuilder()
-      .insert()
-      .into(Item)
-      .values(baseItem)
-      .onConflict('("videoId") DO UPDATE SET "videoId" = EXCLUDED."videoId"')
-      .returning('*')
-      .execute()
-      .then(executeResult => Repository.Item.create(executeResult.generatedMaps[0]));
-    const isItemCreated = Number(item.createdAt) === Number(item.updatedAt);
-
-    const playlistItem = await getConnection().transaction(async (entityManager) => {
-      const playlistItem = Repository.PlaylistItem.create({
-        channel: channelKey,
-        itemId: item.id,
-        userId,
-        isFirstItem: false,
-      });
-      await entityManager.insert(PlaylistItem, playlistItem);
-
-      const lastPlaylistItem = await entityManager
-        .getOneInTransaction(PlaylistItem, 'id', (qb) => qb.where('id <> :id AND channel = :channel AND "nextPlaylistItemId" is NULL', { id: playlistItem.id, channel: channelKey }).orderBy('id', 'DESC'), ['id']);
-      const lastPlaylistItemId = lastPlaylistItem?.id;
-
-      if (lastPlaylistItem) {
-        await entityManager.update(PlaylistItem, { id: lastPlaylistItemId }, {
-          nextPlaylistItemId: playlistItem.id,
-        });
-      } else {
-        playlistItem.isFirstItem = true;
-        await entityManager.save(playlistItem);
-      }
-
-      return playlistItem;
-    });
-
-    let downloadTaskJob: Job | undefined;
-    if (isItemCreated || !item.filename) {
-      downloadTaskJob = DownloadTaskQueue.createJob<IDownloadTaskPayload>({
-        itemId: item.id,
-        playlistItemId: playlistItem.id,
-      });
-    } else {
-      playlistItem.isReady = true;
-      await Repository.PlaylistItem.save(playlistItem);
-    }
-
-    const [rank, estimateSeconds] = await Promise.all([
-      playlistItem.getRank(),
-      playlistItem.getWaitingEstimateSeconds(),
-    ]);
-
-    const notificationText = userId
-      ? `:tada: *[플레이리스트]* <@${userId}>님이 「<${link}|${info.title}>」 곡을 추가했어요. (대기 ${rank + 1}번, ${Duration.fromMillis(estimateSeconds * 1000).toFormat('mm분 ss초')} 남음)`
-      : `:tada: *[플레이리스트]* 「<${link}|${info.title}>」 곡이 추가되었어요. (대기 ${rank + 1}번, ${Duration.fromMillis(estimateSeconds * 1000).toFormat('mm분 ss초')} 남음)`;
-    const resp = await slack.chat.postMessage({
-      token: Config.Slack.BotUserAccessToken,
-      channel: channel.id,
-      text: notificationText,
-      mrkdwn_in: ['text'],
-      unfurl_links: false,
-      unfurl_media: false,
-    });
-
-    playlistItem.slackNotificationIds.queued = resp.ts;
-    await Repository.PlaylistItem.save(playlistItem);
-    if (downloadTaskJob) {
-      await downloadTaskJob.save();
-    } else {
-      slack.reactions.add({
-        token: Config.Slack.BotUserAccessToken,
-        channel: channel.id,
-        timestamp: resp.ts,
-        name: 'oki',
-      }).catch(() => { });
-    }
-
-    redis.publish(`bgm:channels:${playlistItem.channel}:events`, JSON.stringify({
-      channel: playlistItem.channel,
-      event: 'created',
-      id: playlistItem.id,
-    }));
-
-    return {
-      item,
-      playlistItem,
-    };
   }
 }

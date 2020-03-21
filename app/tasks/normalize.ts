@@ -1,4 +1,4 @@
-import { Repository } from './../common';
+import { getRepository } from 'typeorm';
 import { withScope, captureException, captureEvent, Severity } from '@sentry/node';
 import { DateTime } from 'luxon';
 import { Job } from 'bee-queue';
@@ -8,6 +8,7 @@ import childProcess from 'child_process';
 import * as util from 'util';
 import { INormalizeTaskPayload } from '../queue';
 import Config from '../config';
+import { Item } from '@entities/item.entity';
 
 const now = () => DateTime.local().toFormat('yyyy-MM-dd HH:mm:ss');
 
@@ -15,7 +16,7 @@ export default async function (job: Job) {
   const payload = job.data as INormalizeTaskPayload;
   console.info(now(), 'normalize', payload);
 
-  const item = await Repository.Item.findOne(payload.itemId);
+  const item = await getRepository(Item).findOne(payload.itemId);
   if (!item) {
     console.error('item does not exist');
     return;
@@ -90,7 +91,7 @@ export default async function (job: Job) {
         });
       });
 
-      await Repository.Item.update({ id: item.id }, { hasNormalized: true });
+      await getRepository(Item).update({ id: item.id }, { hasNormalized: true });
       console.info(item.id, 'hasNormalized: true');
     }
   } catch (e) {

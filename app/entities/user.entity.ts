@@ -1,4 +1,4 @@
-import { slack, Repository } from './../common';
+import { slack } from './../common';
 import { PlaylistItem } from './playlist-item.entity';
 import { Entity, PrimaryColumn, Column, OneToMany, ManyToOne, CreateDateColumn, UpdateDateColumn, getRepository } from 'typeorm';
 import Config from '../config';
@@ -44,22 +44,6 @@ export class User {
     return this.name.split(' ').reverse().join('');
   }
 
-  public static async getOrCreate(id: string, props: Pick<User, 'name' | 'username'>) {
-    const userRepository = getRepository(this);
-    try {
-      return await userRepository.findOneOrFail(id);
-    } catch {
-    }
-
-    const created = userRepository.create({
-      id,
-      ...props,
-    });
-    await userRepository.save(created);
-
-    return created;
-  }
-
   public async generateAuthToken(additionalPayload: any = {}, expiresIn = '7d') {
     const token = await jwt.sign({
       userId: this.id,
@@ -91,7 +75,7 @@ export class User {
     });
 
     this.slackImChannelId = imOpenResult.channel.id;
-    return Repository.User.update(this.id, {
+    return getRepository(User).update(this.id, {
       slackImChannelId: this.slackImChannelId,
     });
   }
