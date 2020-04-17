@@ -1,7 +1,7 @@
 import { User } from './../entities/user.entity';
 import { EntityRepository, Repository } from 'typeorm';
 
-@EntityRepository()
+@EntityRepository(User)
 export class UserRepository extends Repository<User> {
   public async getOrCreate(id: string, props: Pick<User, 'name' | 'username'>) {
     try {

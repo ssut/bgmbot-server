@@ -7,7 +7,7 @@ const SKIP_KEYWORDS = [
   '첨부',
 ];
 
-@EntityRepository()
+@EntityRepository(Item)
 export class ItemRepository extends Repository<Item> {
   public async getAutoCompletionTitles(keyword: string, limit = 10) {
     const titleConditions = keyword.split(/\s/g).map((k) => generateQueryRegexCondition(k));

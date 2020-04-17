@@ -11,7 +11,7 @@ import { DownloadTaskQueue, IDownloadTaskPayload } from '@app/queue';
 import { getChannel } from '@app/utils';
 import { ItemRepository } from './item.repository';
 
-@EntityRepository()
+@EntityRepository(PlaylistItem)
 export class PlaylistItemRepository extends Repository<PlaylistItem> {
   private get connection() {
     return this.manager.connection;
