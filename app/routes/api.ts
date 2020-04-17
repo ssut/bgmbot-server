@@ -202,6 +202,17 @@ class ConnectionHandler {
           });
         }
         break;
+
+      case 'skipCurrentPlaylistItemRequested':
+        if (await this.checkIfPlayer()) {
+          this.send({
+            ts: -1,
+            ok: true,
+            content: {
+              event: EventType.SkipCurrentPlaylistItemRequested,
+            },
+          });
+        }
     }
   }
 

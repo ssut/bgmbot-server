@@ -501,6 +501,40 @@ app.post('/slack/interactives', async (request, reply) => {
   return '';
 });
 
+app.post('/slack/slash-commands/next', async (request, reply) => {
+  const {
+    user_id,
+    channel_id,
+  } = request.body;
+  console.info(1);
+
+  const channel = getChannelByChannelId(channel_id);
+  if (!channel) {
+    return '지원하지 않는 채널입니다.';
+  }
+
+  const user = await getRepository(User).findOne(user_id);
+  if (!user) {
+    return '허용되지 않은 사용자인 것 같아요.';
+  }
+
+  if (channel.info.superuser !== user_id && !user.allowedChannels.includes(channel.key)) {
+    return '권한 부여가 필요합니다. 채널장에게 요청해주세요.';
+  }
+
+  const playlist = await getCustomRepository(PlaylistItemRepository).getPlaylist(channel.key, { previousCount: 0, nextCount: 5 });
+  if (playlist.nextPlaylistItems.filter(x => !x.isDeleted).length === 0) {
+    return '다음에 재생할 곡이 없어요. 플레이리스트에 곡을 먼저 추가해주세요.';
+  }
+
+  redis.publish(`bgm:channels:${channel.key}:events`, JSON.stringify({
+    channel: channel.key,
+    event: 'skipCurrentPlaylistItemRequested',
+  }));
+
+  return '건너뛰기 요청이 전송됐어요.';
+});
+
 app.post('/slack/slash-commands/playlist', async (request, reply) => {
   const {
     response_url,

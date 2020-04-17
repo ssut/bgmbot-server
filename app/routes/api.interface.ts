@@ -20,6 +20,7 @@ export enum EventType {
   ItemDownloaded = 'ItemDownloaded',
   VolumeRequested = 'VolumeRequested',
   VolumeSetRequested = 'VolumeSetRequested',
+  SkipCurrentPlaylistItemRequested = 'SkipCurrentPlaylistItemRequested',
 
   PlaylistUpdated = 'PlaylistUpdated',
   PlayerProgressUpdated = 'PlayerProgressUpdated',
