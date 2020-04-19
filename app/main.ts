@@ -1,5 +1,5 @@
 import { UserRepository } from './repositories/user.repository';
-import { DateTime } from 'luxon';
+import { DateTime, Duration } from 'luxon';
 import './setup';
 import { EventEmitter } from 'events';
 
@@ -17,6 +17,7 @@ import { In, getRepository, getCustomRepository } from 'typeorm';
 import * as util from 'util';
 import { authenticator } from 'otplib';
 import uuid from 'uuid';
+import YouTubeWebData from 'youtube-web-data';
 
 import { client, initConnection, redis, slack } from './common';
 import Config from './config';
@@ -725,6 +726,140 @@ app.post('/slack/slash-commands/permit', async (request, reply) => {
   }
 
   return ':(';
+});
+
+app.post('/slack/slash-commands/trending', async (request, reply) => {
+  const {
+    response_url,
+    trigger_id,
+    user_id,
+    text,
+    channel_id,
+  } = request.body;
+
+  const channel = getChannelByChannelId(channel_id);
+  if (!channel) {
+    return '지원하지 않는 채널입니다.';
+  }
+
+  const user = await getRepository(User).findOne(user_id);
+  if (!user || !user.allowedChannels.includes(channel.key)) {
+    return '권한 부여가 필요합니다. 채널장에게 요청해주세요!';
+  }
+
+  if (user.TOSAgreedAt === null) {
+    client.post(response_url, {
+      replace_original: false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Google의 서비스 개발 정책에 따라 다음 내용에 동의한 후 서비스를 사용하실 수 있습니다:*\n- <https://www.youtube.com/t/terms|YouTube 이용약관 (YouTube TOS)>\n- <http://www.google.com/policies/privacy|Google 개인정보 보호 정책 (Google Privacy Policy)>",
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*이 서비스는 Google의 <https://developers.google.com/youtube|YouTube API Services>를 사용하고 있습니다. Google에서 제공받는 정보는 다음과 같습니다:*\n- YouTube 동영상 검색 결과: 동영상의 제목(title), 내용(description), 채널(channel), 길이(duration), 미리보기 이미지(thumbnail)\n\n*서비스를 제공하기 위해 Google로부터 제공받은 정보를 다음과 같은 방식으로 사용하고 있습니다:*\n- 영상 없이 오디오만으로 재생 가능한 콘텐츠를 찾기 위해 동영상 길이 정보를 사용하여 필터\n- 검색 결과 표시 (슬랙 메시지)",
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "위 내용에 동의하는 경우 오른쪽에 있는 버튼을 눌러주세요.",
+          },
+          "accessory": {
+            "type": "button",
+            "style": "primary",
+            "text": {
+              "type": "plain_text",
+              "text": "동의",
+              "emoji": true
+            },
+            "value": JSON.stringify({
+              type: NotificationType.AgreeTOS,
+            }),
+          },
+        },
+      ],
+    });
+
+    return `:eyes-cute: 이용약관 동의가 필요합니다. 잠시만 기다려주세요!`;
+  }
+
+  (async () => {
+    const webData = new YouTubeWebData();
+    const trendingItems = await webData.getTrendingItems(/음악|music/g);
+
+    if (trendingItems) {
+      await client.post(response_url, {
+        replace_original: true,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "plain_text",
+              "emoji": true,
+              "text": "원하는 곡을 선택해주세요:"
+            }
+          },
+          ...trendingItems.flatMap((item) => {
+            const link = `https://www.youtube.com/watch/${item.videoId}`;
+            const durationString = Duration.fromMillis(item.durationSeconds * 1000).toFormat('mm:ss');
+
+            return [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": `<${link}|*${item.title}*>`
+                },
+                "accessory": {
+                  "type": "image",
+                  "image_url": `https://img.youtube.com/vi/${item.videoId}/default.jpg`,
+                  "alt_text": item.title,
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": `${item.publisher} | ${durationString}`,
+                },
+                "accessory": {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "추가하기",
+                    "emoji": true
+                  },
+                  "value": JSON.stringify({
+                    type: NotificationType.AddToPlaylist,
+                    videoId: item.videoId,
+                    link: link,
+                  }),
+                },
+              },
+            ];
+          }),
+          {
+            "type": "context",
+            "elements": [
+              {
+                "type": "mrkdwn",
+                "text": "Search results are provided by <https://developers.google.com/youtube/terms/developer-policies#definition-youtube-api-services|YouTube API Services>. By using this service, you agree to the <http://www.google.com/policies/privacy|Google Privacy Policy>."
+              }
+            ]
+          },
+        ],
+      });
+    }
+  })();
+
+  return `:eyes-cute: 인기 차트를 가져오고 있어요. 잠시만 기다려주세요!`;
 });
 
 app.post('/slack/slash-commands/search', async (request, reply) => {
