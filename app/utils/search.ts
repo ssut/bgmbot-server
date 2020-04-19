@@ -97,7 +97,7 @@ export const search = async (keyword: string, options: ISearchOptions = {
             videoId: result.id,
             title: result.title,
             link: result.link,
-            thumbnailUrl: result.thumbnails.default?.url ?? `https://img.youtube.com/vi/${result.id}/default.jpeg`,
+            thumbnailUrl: result.thumbnails.default?.url ?? `https://img.youtube.com/vi/${result.id}/default.jpg`,
             duration: result.durationSeconds,
             description: result.description,
             channelId: result.channelId,
