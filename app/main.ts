@@ -503,10 +503,10 @@ app.post('/slack/interactives', async (request, reply) => {
 
 app.post('/slack/slash-commands/next', async (request, reply) => {
   const {
+    response_url,
     user_id,
     channel_id,
   } = request.body;
-  console.info(1);
 
   const channel = getChannelByChannelId(channel_id);
   if (!channel) {
@@ -523,6 +523,9 @@ app.post('/slack/slash-commands/next', async (request, reply) => {
   }
 
   const playlist = await getCustomRepository(PlaylistItemRepository).getPlaylist(channel.key, { previousCount: 0, nextCount: 5 });
+  if (!playlist.nowPlaying) {
+    return '지금 재생 중인 곡이 없어요.';
+  }
   if (playlist.nextPlaylistItems.filter(x => !x.isDeleted).length === 0) {
     return '다음에 재생할 곡이 없어요. 플레이리스트에 곡을 먼저 추가해주세요.';
   }
@@ -531,6 +534,11 @@ app.post('/slack/slash-commands/next', async (request, reply) => {
     channel: channel.key,
     event: 'skipCurrentPlaylistItemRequested',
   }));
+
+  client.post(response_url, {
+    response_type: 'in_channel',
+    text: `:superspinthink: *[건너뛰기]* <@${user_id}>님이 지금 재생 중인 곡을 넘겼어요.`,
+  });
 
   return '건너뛰기 요청이 전송됐어요.';
 });
