@@ -43,7 +43,7 @@
     "core-js": "^3.6.4",
     "cron-cluster": "^1.1.3",
     "dotenv": "^8.2.0",
-    "fastify": "^2.12.0",
+    "fastify": "^2.15.1",
     "fastify-cors": "^3.0.1",
     "fastify-formbody": "^3.1.0",
     "fastify-sentry": "^1.4.0",
