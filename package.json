@@ -67,7 +67,7 @@
     "slack": "^11.0.2",
     "tough-cookie": "^3.0.1",
     "tunnel": "0.0.6",
-    "typeorm": "^0.2.22",
+    "typeorm": "^0.2.25",
     "uuid": "^3.4.0",
     "youtube-search": "Spring3/youtube-search",
     "ytdl-core-new": "^1.1.2"
